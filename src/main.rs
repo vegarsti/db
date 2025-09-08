@@ -29,8 +29,6 @@ enum Expr {
     Column(String),
     Literal(Value),
     Eq(Box<Expr>, Box<Expr>),
-    // TODO: Exercise for the reader
-    // NotEq(Box<Expr>, Box<Expr>),
 }
 
 impl Expr {
@@ -203,42 +201,30 @@ impl Select {
 }
 
 struct Project {
-    columns: Vec<String>,
+    // Exprs and their aliases
+    exprs: Vec<(Expr, String)>,
     input: Box<Node>,
 }
 
 impl Project {
-    fn new(columns: Vec<String>, input: Box<Node>) -> Project {
-        Project { columns, input }
+    fn new(exprs: Vec<(Expr, String)>, input: Box<Node>) -> Project {
+        Project { exprs, input }
     }
 
     fn next(&mut self) -> Option<Vec<Value>> {
-        // Figure out which columns to select
-        let mut select_indices: Vec<usize> = vec![];
-        for select_column in self.columns.clone() {
-            for (i, input_column) in self.input.schema().iter().enumerate() {
-                if *input_column == *select_column {
-                    select_indices.push(i);
-                }
-            }
-        }
-
-        // Loop over
-        self.input.next().map(|row| {
-            let mut out = vec![];
-            for select_idx in select_indices.clone() {
-                for (i, value) in row.clone().into_iter().enumerate() {
-                    if i == select_idx {
-                        out.push(value.clone());
-                    }
-                }
-            }
-            out
+        self.input.next().map(|in_row| {
+            self.exprs
+                .iter()
+                .map(|(expr, _alias)| expr.eval(&in_row, &self.input.schema()))
+                .collect()
         })
     }
 
     fn schema(&self) -> Vec<String> {
-        self.columns.clone()
+        self.exprs
+            .iter()
+            .map(|(_expr, alias)| alias.to_string())
+            .collect()
     }
 }
 
@@ -335,11 +321,17 @@ fn main() {
     let select_node = Node::Select(select);
     let project_node = Node::Project(Project::new(
         vec![
-            "a".to_string(),
-            "b".to_string(),
-            "c".to_string(),
-            "b".to_string(),
-            "a".to_string(),
+            (Expr::Literal(Value::Bool(true)), "bool_literal".to_string()),
+            (Expr::Literal(Value::Int(1)), "int_literal".to_string()),
+            (
+                Expr::Literal(Value::Str("hello world".to_string())),
+                "hello_world".to_string(),
+            ),
+            (Expr::Column("a".to_string()), "a".to_string()),
+            (Expr::Column("b".to_string()), "b".to_string()),
+            (Expr::Column("c".to_string()), "c".to_string()),
+            (Expr::Column("b".to_string()), "b".to_string()),
+            (Expr::Column("a".to_string()), "a".to_string()),
         ],
         Box::new(select_node),
     ));
