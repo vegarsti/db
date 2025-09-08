@@ -124,7 +124,7 @@ impl CSVFileScan {
     }
 
     /// The schema of the file (the columns)
-    /// TODO: Add types?
+    /// TODO: Add types
     fn schema(&self) -> Vec<String> {
         self.columns.clone()
     }
@@ -201,7 +201,7 @@ impl Select {
 }
 
 struct Project {
-    // Exprs and their aliases
+    // Vector of expressions to project and their aliases
     exprs: Vec<(Expr, String)>,
     input: Box<Node>,
 }
@@ -229,47 +229,44 @@ impl Project {
 }
 
 struct Sort {
-    by: Box<Expr>,
+    /// The expression to sort by (in ascending order)
+    sort_by: Box<Expr>,
     input: Box<Node>,
-    is_sorted: bool,
-    rows: Vec<Vec<Value>>,
-    rows_idx: usize,
+    buffer: Vec<Vec<Value>>,
+    /// Index into the sorted buffer
+    idx: usize,
 }
 
 impl Sort {
-    fn new(by: Box<Expr>, input: Box<Node>) -> Sort {
+    fn new(sort_by: Box<Expr>, input: Box<Node>) -> Sort {
         Sort {
-            by,
+            sort_by,
             input,
-            is_sorted: false,
-            rows: vec![],
-            rows_idx: 0,
+            buffer: vec![],
+            idx: 0,
         }
     }
 
     fn next(&mut self) -> Option<Vec<Value>> {
-        // If not sorted yet, sort
-        if !self.is_sorted {
-            if self.rows.len() != 0 {
-                panic!("Is not sorted but buffer is not empty!");
-            }
-            if self.rows_idx != 0 {
-                panic!("Is not sorted but rows_idx != 0!");
+        // Materialize the sort into `self.buffer` (only happens once)
+        if self.buffer.len() == 0 {
+            if self.idx != 0 {
+                panic!("Sort is not materialized but idx != 0!");
             }
             while let Some(row) = self.input.next() {
-                self.rows.push(row);
+                self.buffer.push(row);
             }
             let schema = &self.schema();
-            self.rows.sort_by_key(|row| self.by.eval(row, &schema));
-            self.is_sorted = true;
+            self.buffer
+                .sort_by_key(|row| self.sort_by.eval(row, &schema));
         }
 
         // Return rows from buffer until empty
-        if self.rows_idx >= self.rows.len() - 1 {
+        if self.idx >= self.buffer.len() - 1 {
             None
         } else {
-            let to_return = self.rows[self.rows_idx].clone();
-            self.rows_idx += 1;
+            let to_return = self.buffer[self.idx].clone();
+            self.idx += 1;
             Some(to_return)
         }
     }
